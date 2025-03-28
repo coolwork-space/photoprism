@@ -131,7 +131,7 @@ var DialectSQLite = Migrations{
 	},
 	{
 		ID:         "20250315-000001",
-		Dialect:    "sqlite3",
+		Dialect:    "sqlite",
 		Stage:      "pre",
 		Statements: []string{"ALTER TABLE auth_users_settings RENAME COLUMN default_page TO ui_start_page;"},
 	},
