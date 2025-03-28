@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/photoprism/photoprism/internal/entity"
+	"github.com/photoprism/photoprism/internal/functions"
 	"github.com/photoprism/photoprism/pkg/clean"
 )
 
@@ -22,14 +23,15 @@ func People() (people entity.People, err error) {
 
 // PeopleCount returns the total number of people in the index.
 func PeopleCount() (count int, err error) {
+	countData := int64(0)
 	err = Db().
 		Table(entity.Subject{}.TableName()).
 		Where("deleted_at IS NULL").
-		Where("subj_hidden = 0").
+		Where("subj_hidden = FALSE").
 		Where("subj_type = ?", entity.SubjPerson).
-		Count(&count).Error
+		Count(&countData).Error
 
-	return count, err
+	return functions.SafeInt64toint(countData), err
 }
 
 // Subjects returns subjects from the index.
@@ -63,11 +65,27 @@ func SubjectMap() (result map[string]entity.Subject, err error) {
 
 // RemoveOrphanSubjects permanently removes dangling marker subjects from the index.
 func RemoveOrphanSubjects() (removed int64, err error) {
+
+	// Gather all the uid's to be removed
+	results := []string{}
+	UnscopedDb().
+		Model(&entity.Subject{}).
+		Select("subj_uid").
+		Where("subj_src = ?", entity.SrcMarker).
+		Where(fmt.Sprintf("subj_uid NOT IN (SELECT subj_uid FROM %s)", entity.Face{}.TableName())).
+		Where(fmt.Sprintf("subj_uid NOT IN (SELECT subj_uid FROM %s)", entity.Marker{}.TableName())).
+		Scan(&results)
+
 	res := UnscopedDb().
 		Where("subj_src = ?", entity.SrcMarker).
 		Where(fmt.Sprintf("subj_uid NOT IN (SELECT subj_uid FROM %s)", entity.Face{}.TableName())).
 		Where(fmt.Sprintf("subj_uid NOT IN (SELECT subj_uid FROM %s)", entity.Marker{}.TableName())).
 		Delete(&entity.Subject{})
+
+	if res.Error == nil {
+		// Remove from the cache.  This is because BulkDelete appears to trigger a single AfterDelete that doesn't have the SubjUID in it.
+		entity.SubjNames.BulkRemove(results)
+	}
 
 	return res.RowsAffected, res.Error
 }
@@ -78,7 +96,7 @@ func CreateMarkerSubjects() (affected int64, err error) {
 
 	if err := Db().
 		Where("subj_uid = '' AND marker_name <> '' AND subj_src <> ?", entity.SrcAuto).
-		Where("marker_invalid = 0 AND marker_type = ?", entity.MarkerFace).
+		Where("marker_invalid = FALSE AND marker_type = ?", entity.MarkerFace).
 		Order("marker_name").
 		Find(&markers).Error; err != nil {
 		return affected, err
@@ -104,7 +122,7 @@ func CreateMarkerSubjects() (affected int64, err error) {
 
 		name = m.MarkerName
 
-		if err := m.Updates(entity.Map{"SubjUID": subj.SubjUID, "MarkerReview": false}); err != nil {
+		if err := m.Updates(map[string]interface{}{"SubjUID": subj.SubjUID, "MarkerReview": false}); err != nil {
 			return affected, err
 		}
 

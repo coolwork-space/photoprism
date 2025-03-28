@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/photoprism/photoprism/internal/ai/classify"
+	"gorm.io/gorm"
 )
 
 func TestNewLabel(t *testing.T) {
@@ -185,9 +186,9 @@ func TestLabel_Delete(t *testing.T) {
 
 func TestLabel_Restore(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
-		var deletedAt = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-		label := &Label{DeletedAt: &deletedAt, LabelName: "ToBeRestored"}
+		var deletedAt = gorm.DeletedAt{Time: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), Valid: true}
 
+		label := &Label{DeletedAt: deletedAt, LabelName: "ToBeRestored"}
 		if err := label.Save(); err != nil {
 			t.Fatal(err)
 		}
@@ -201,8 +202,7 @@ func TestLabel_Restore(t *testing.T) {
 		assert.False(t, label.Deleted())
 	})
 	t.Run("label not deleted", func(t *testing.T) {
-		label := &Label{DeletedAt: nil, LabelName: "NotDeleted1234"}
-
+		label := &Label{DeletedAt: gorm.DeletedAt{}, LabelName: "NotDeleted1234"}
 		if err := label.Restore(); err != nil {
 			t.Fatal(err)
 		}

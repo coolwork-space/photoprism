@@ -36,13 +36,12 @@ import (
 	"time"
 
 	"github.com/dustin/go-humanize"
-	"github.com/jinzhu/gorm"
-	_ "github.com/jinzhu/gorm/dialects/mysql"
-	_ "github.com/jinzhu/gorm/dialects/sqlite"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/klauspost/cpuid/v2"
 	"github.com/pbnjay/memory"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
+	"gorm.io/gorm"
 
 	"github.com/photoprism/photoprism/internal/ai/face"
 	"github.com/photoprism/photoprism/internal/config/customize"
@@ -71,6 +70,7 @@ type Config struct {
 	options   *Options
 	settings  *customize.Settings
 	db        *gorm.DB
+	pool      *pgxpool.Pool
 	dbVersion string
 	hub       *hub.Config
 	token     string

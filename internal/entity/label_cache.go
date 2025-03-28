@@ -1,10 +1,12 @@
 package entity
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
 	gc "github.com/patrickmn/go-cache"
+	"gorm.io/gorm"
 
 	"github.com/photoprism/photoprism/pkg/clean"
 	"github.com/photoprism/photoprism/pkg/txt"
@@ -44,7 +46,7 @@ func FindLabel(name string, cached bool) (*Label, error) {
 	// Fetch and cache label from database.
 	result := &Label{}
 
-	if find := Db().First(result, "(label_slug <> '' AND label_slug = ? OR custom_slug <> '' AND custom_slug = ?)", labelSlug, labelSlug); find.RecordNotFound() {
+	if find := Db().First(result, "(label_slug <> '' AND label_slug = ? OR custom_slug <> '' AND custom_slug = ?)", labelSlug, labelSlug); errors.Is(find.Error, gorm.ErrRecordNotFound) {
 		labelCache.Set(labelSlug, result, labelErrorExpiration)
 		return result, fmt.Errorf("label not found")
 	} else if find.Error != nil {

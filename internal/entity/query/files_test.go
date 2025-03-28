@@ -108,11 +108,39 @@ func TestFilesByUID(t *testing.T) {
 		}
 		assert.Equal(t, 0, len(files))
 	})
-	//TODO fails on mariadb
+	//TODO check if this still fails on mariadb
 	t.Run("Error", func(t *testing.T) {
 		files, err := FilesByUID([]string{"fs6sg6bw45bnlxxx"}, -100, 0)
 
-		assert.Error(t, err)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assert.Equal(t, 0, len(files))
+	})
+
+	t.Run("Negative limit with offset", func(t *testing.T) {
+		if entity.DbDialect() == entity.MySQL {
+			log.Info("Expect SQL syntax Error to be generated")
+		}
+		files, err := FilesByUID([]string{"fs6sg6bw45bnlqdw"}, -100, 100)
+
+		switch entity.DbDialect() {
+		case entity.Postgres, entity.SQLite3:
+			if err != nil {
+				t.Fatal(err)
+			}
+			assert.Equal(t, 0, len(files))
+		case entity.MySQL:
+			assert.Error(t, err)
+		}
+	})
+
+	t.Run("offset and limit", func(t *testing.T) {
+		files, err := FilesByUID([]string{"fs6sg6bw45bnlxxx"}, 10, 100)
+
+		if err != nil {
+			t.Fatal(err)
+		}
 		assert.Equal(t, 0, len(files))
 	})
 }

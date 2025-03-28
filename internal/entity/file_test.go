@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"gorm.io/gorm"
 
 	"github.com/photoprism/photoprism/internal/ai/face"
 	"github.com/photoprism/photoprism/internal/config/customize"
@@ -18,23 +19,70 @@ import (
 
 func TestFile_RegenerateIndex(t *testing.T) {
 	t.Run("ID", func(t *testing.T) {
+		Db().Model(&File{ID: 1000000}).Update("media_id", gorm.Expr("null")).Update("photo_taken_at", gorm.Expr("null")).Update("time_index", gorm.Expr("null"))
 		File{ID: 1000000}.RegenerateIndex()
+		result := File{}
+		if err := Db().Model(&File{ID: 1000000}).First(&result).Error; err != nil {
+			t.Error(err)
+		}
+		assert.NotNil(t, result.PhotoTakenAt)
+		assert.NotNil(t, result.MediaID)
+		assert.NotNil(t, result.TimeIndex)
 	})
 	t.Run("PhotoID", func(t *testing.T) {
+		Db().Model(&File{}).Where("photo_id = ?", 1000039).Update("media_id", gorm.Expr("null")).Update("photo_taken_at", gorm.Expr("null")).Update("time_index", gorm.Expr("null"))
 		File{PhotoID: 1000039}.RegenerateIndex()
+		result := File{}
+		if err := Db().Model(&File{}).Where("photo_id = ?", 1000039).First(&result).Error; err != nil {
+			t.Error(err)
+		}
+		assert.NotNil(t, result.PhotoTakenAt)
+		assert.NotNil(t, result.MediaID)
+		assert.NotNil(t, result.TimeIndex)
 	})
 	t.Run("PhotoUID", func(t *testing.T) {
+		Db().Model(&File{}).Where("photo_uid = ?", "ps6sg6byk7wrbk32").Update("media_id", gorm.Expr("null")).Update("photo_taken_at", gorm.Expr("null")).Update("time_index", gorm.Expr("null"))
 		File{PhotoUID: "ps6sg6byk7wrbk32"}.RegenerateIndex()
+		result := File{}
+		if err := Db().Model(&File{}).Where("photo_uid = ?", "ps6sg6byk7wrbk32").First(&result).Error; err != nil {
+			t.Error(err)
+		}
+		assert.NotNil(t, result.PhotoTakenAt)
+		assert.NotNil(t, result.MediaID)
+		assert.NotNil(t, result.TimeIndex)
+		assert.Equal(t, time.Date(2020, 11, 11, 9, 7, 18, 0, time.UTC), result.PhotoTakenAt)
+		if result.MediaID != nil {
+			assert.Equal(t, "9998999960-0-fs6sg6bw15bnl342", *result.MediaID)
+		}
+		if result.TimeIndex != nil {
+			assert.Equal(t, "79798888909282-9998999960-0-fs6sg6bw15bnl342", *result.TimeIndex)
+		}
 	})
 	t.Run("FirstFileByHash", func(t *testing.T) {
 		f, err := FirstFileByHash("2cad9168fa6acc5c5c2965ddf6ec465ca42fd818")
 		if err != nil {
 			t.Fatal(err)
 		}
+		Db().Model(&f).Update("media_id", gorm.Expr("null")).Update("photo_taken_at", gorm.Expr("null")).Update("time_index", gorm.Expr("null"))
 		f.RegenerateIndex()
+
+		result, err := FirstFileByHash("2cad9168fa6acc5c5c2965ddf6ec465ca42fd818")
+		assert.NotNil(t, result.PhotoTakenAt)
+		assert.NotNil(t, result.MediaID)
+		assert.NotNil(t, result.TimeIndex)
 	})
 	t.Run("All", func(t *testing.T) {
+		Db().Exec("UPDATE files SET media_id = null, photo_taken_at = null, time_index = null WHERE photo_id IS NOT NULL")
 		File{}.RegenerateIndex()
+		count := int64(0)
+		Db().Model(&File{}).Where(gorm.Expr("photo_id IS NOT NULL AND photo_taken_at IS NOT NULL")).Count(&count)
+		assert.Greater(t, count, int64(67))
+		count = int64(0)
+		Db().Model(&File{}).Where(gorm.Expr("photo_id IS NOT NULL AND media_id IS NOT NULL")).Count(&count)
+		assert.Greater(t, count, int64(67))
+		count = int64(0)
+		Db().Model(&File{}).Where(gorm.Expr("photo_id IS NOT NULL AND time_index IS NOT NULL")).Count(&count)
+		assert.Greater(t, count, int64(67))
 	})
 }
 
@@ -116,7 +164,7 @@ func TestFile_ShareFileName(t *testing.T) {
 }
 
 func TestFile_Changed(t *testing.T) {
-	var deletedAt = time.Date(2019, 01, 15, 0, 0, 0, 0, time.UTC)
+	var deletedAt = gorm.DeletedAt{Valid: true, Time: time.Date(2019, 01, 15, 0, 0, 0, 0, time.UTC)}
 	t.Run("different modified times", func(t *testing.T) {
 		file := &File{Photo: nil, FileType: "jpg", FileSize: 500, ModTime: time.Date(2019, 01, 15, 0, 0, 0, 0, time.UTC).Unix()}
 		d := time.Date(2020, 01, 15, 0, 0, 0, 0, time.UTC)
@@ -133,27 +181,27 @@ func TestFile_Changed(t *testing.T) {
 		assert.Equal(t, false, file.Changed(500, d))
 	})
 	t.Run("deleted", func(t *testing.T) {
-		file := &File{Photo: nil, FileType: "jpg", FileSize: 500, ModTime: time.Date(2019, 01, 15, 0, 0, 0, 0, time.UTC).Unix(), DeletedAt: &deletedAt}
+		file := &File{Photo: nil, FileType: "jpg", FileSize: 500, ModTime: time.Date(2019, 01, 15, 0, 0, 0, 0, time.UTC).Unix(), DeletedAt: deletedAt}
 		d := time.Date(2019, 01, 15, 0, 0, 0, 0, time.UTC)
 		assert.Equal(t, false, file.Changed(500, d))
 	})
 }
 
 func TestFile_Missing(t *testing.T) {
-	var deletedAt = time.Date(2019, 01, 15, 0, 0, 0, 0, time.UTC)
+	var deletedAt = gorm.DeletedAt{Valid: true, Time: time.Date(2019, 01, 15, 0, 0, 0, 0, time.UTC)}
 
 	t.Run("deleted", func(t *testing.T) {
-		file := &File{FileMissing: false, Photo: nil, FileType: "jpg", FileSize: 500, ModTime: time.Date(2019, 01, 15, 0, 0, 0, 0, time.UTC).Unix(), DeletedAt: &deletedAt}
+		file := &File{FileMissing: false, Photo: nil, FileType: "jpg", FileSize: 500, ModTime: time.Date(2019, 01, 15, 0, 0, 0, 0, time.UTC).Unix(), DeletedAt: deletedAt}
 		assert.Equal(t, true, file.Missing())
 	})
 
 	t.Run("missing", func(t *testing.T) {
-		file := &File{FileMissing: true, Photo: nil, FileType: "jpg", FileSize: 500, ModTime: time.Date(2019, 01, 15, 0, 0, 0, 0, time.UTC).Unix(), DeletedAt: nil}
+		file := &File{FileMissing: true, Photo: nil, FileType: "jpg", FileSize: 500, ModTime: time.Date(2019, 01, 15, 0, 0, 0, 0, time.UTC).Unix(), DeletedAt: gorm.DeletedAt{Valid: false}}
 		assert.Equal(t, true, file.Missing())
 	})
 
 	t.Run("not_missing", func(t *testing.T) {
-		file := &File{FileMissing: false, Photo: nil, FileType: "jpg", FileSize: 500, ModTime: time.Date(2019, 01, 15, 0, 0, 0, 0, time.UTC).Unix(), DeletedAt: nil}
+		file := &File{FileMissing: false, Photo: nil, FileType: "jpg", FileSize: 500, ModTime: time.Date(2019, 01, 15, 0, 0, 0, 0, time.UTC).Unix(), DeletedAt: gorm.DeletedAt{Valid: false}}
 		assert.Equal(t, false, file.Missing())
 	})
 }
@@ -165,9 +213,16 @@ func TestFile_Create(t *testing.T) {
 		assert.Error(t, file.Create())
 	})
 	t.Run("file already exists", func(t *testing.T) {
+		newPhoto := &Photo{ID: 123} // Can't add details if there isn't a photo in the database.
+		Db().Create(newPhoto)
+
 		file := &File{PhotoID: 123, FileType: "jpg", FileSize: 500, ModTime: time.Date(2019, 01, 15, 0, 0, 0, 0, time.UTC).Unix()}
 		assert.Nil(t, file.Create())
+		newID := file.ID
+		log.Info("Expect duplicate key violation Error or SQLSTATE from file.Create")
 		assert.Error(t, file.Create())
+		UnscopedDb().Where("id = ?", newID).Delete(&File{})
+		UnscopedDb().Delete(newPhoto)
 	})
 	t.Run("Success", func(t *testing.T) {
 		photo := &Photo{TakenAtLocal: time.Date(2019, 01, 15, 0, 0, 0, 0, time.UTC), PhotoTitle: "Berlin / Morning Mood"}
@@ -257,7 +312,7 @@ func TestFile_UpdateVideoInfos(t *testing.T) {
 
 		var files Files
 
-		if err := Db().Where("photo_id = ? AND file_video = 1", file.PhotoID).Find(&files).Error; err != nil {
+		if err := Db().Where("photo_id = ? AND file_video = TRUE", file.PhotoID).Find(&files).Error; err != nil {
 			t.Fatal(err)
 		}
 
@@ -272,6 +327,9 @@ func TestFile_UpdateVideoInfos(t *testing.T) {
 
 func TestFile_Update(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
+		newPhoto := &Photo{ID: 5678} // Can't add details if there isn't a photo in the database.
+		Db().Create(newPhoto)
+
 		file := &File{FileType: "jpg", FileSize: 500, FileName: "ToBeUpdated", FileRoot: "", PhotoID: 5678}
 
 		err := file.Save()
@@ -288,6 +346,9 @@ func TestFile_Update(t *testing.T) {
 			t.Fatal(err2)
 		}
 		assert.Equal(t, "Happy", file.FileName)
+
+		UnscopedDb().Delete(file)
+		UnscopedDb().Delete(newPhoto)
 	})
 }
 
@@ -409,6 +470,9 @@ func TestFile_SetProjection(t *testing.T) {
 
 func TestFile_Delete(t *testing.T) {
 	t.Run("permanently", func(t *testing.T) {
+		newPhoto := &Photo{ID: 5678} // Can't add details if there isn't a photo in the database.
+		Db().Create(newPhoto)
+
 		file := &File{FileType: "jpg", FileSize: 500, FileName: "ToBePermanentlyDeleted", FileRoot: "", PhotoID: 5678}
 
 		err := file.Save()
@@ -421,8 +485,12 @@ func TestFile_Delete(t *testing.T) {
 		err2 := file.Delete(true)
 
 		assert.Nil(t, err2)
+		UnscopedDb().Delete(newPhoto)
 	})
 	t.Run("not permanently", func(t *testing.T) {
+		newPhoto := &Photo{ID: 5678} // Can't add details if there isn't a photo in the database.
+		Db().Create(newPhoto)
+
 		file := &File{FileType: "jpg", FileSize: 500, FileName: "ToBeDeleted", FileRoot: "", PhotoID: 5678}
 
 		err := file.Save()
@@ -435,6 +503,7 @@ func TestFile_Delete(t *testing.T) {
 		err2 := file.Delete(false)
 
 		assert.Nil(t, err2)
+		newPhoto.DeletePermanently()
 	})
 }
 
@@ -512,25 +581,42 @@ func TestFile_DownloadName(t *testing.T) {
 
 func TestFile_Undelete(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
-		file := &File{Photo: nil, FileType: "jpg", FileSize: 500}
+		photo := &Photo{}
+		err := photo.Create()
+		assert.NoError(t, err)
+		file := &File{Photo: photo, FileType: "jpg", FileSize: 500}
+		err = file.Create()
+		assert.NoError(t, err)
 		assert.Equal(t, nil, file.Purge())
 		assert.Equal(t, true, file.FileMissing)
-		err := file.Undelete()
+
+		err = file.Undelete()
 
 		if err != nil {
 			t.Fatal(err)
 		}
 		assert.Equal(t, false, file.FileMissing)
+		UnscopedDb().Delete(photo.Details)
+		UnscopedDb().Delete(file)
+		UnscopedDb().Delete(photo)
 	})
 	t.Run("file not missing", func(t *testing.T) {
-		file := &File{Photo: nil, FileType: "jpg", FileSize: 500}
+		photo := &Photo{}
+		err := photo.Create()
+		assert.NoError(t, err)
+		file := &File{Photo: photo, FileType: "jpg", FileSize: 500}
+		err = file.Create()
+		assert.NoError(t, err)
 		assert.Equal(t, false, file.FileMissing)
-		err := file.Undelete()
+		err = file.Undelete()
 
 		if err != nil {
 			t.Fatal(err)
 		}
 		assert.Equal(t, false, file.FileMissing)
+		UnscopedDb().Delete(photo.Details)
+		UnscopedDb().Delete(file)
+		UnscopedDb().Delete(photo)
 	})
 }
 
@@ -595,7 +681,7 @@ func TestFile_Rename(t *testing.T) {
 		assert.Equal(t, "2790/07/27900704_070228_D6D51B6C.jpg", m.FileName)
 		assert.Equal(t, RootOriginals, m.FileRoot)
 		assert.Equal(t, false, m.FileMissing)
-		assert.Nil(t, m.DeletedAt)
+		assert.False(t, m.DeletedAt.Valid)
 
 		p := m.RelatedPhoto()
 
@@ -609,7 +695,7 @@ func TestFile_Rename(t *testing.T) {
 		assert.Equal(t, "x/y/newName.jpg", m.FileName)
 		assert.Equal(t, "newRoot", m.FileRoot)
 		assert.Equal(t, false, m.FileMissing)
-		assert.Nil(t, m.DeletedAt)
+		assert.False(t, m.DeletedAt.Valid)
 		assert.Equal(t, "x/y", p.PhotoPath)
 		assert.Equal(t, "newBase", p.PhotoName)
 
@@ -620,7 +706,7 @@ func TestFile_Rename(t *testing.T) {
 		assert.Equal(t, "2790/07/27900704_070228_D6D51B6C.jpg", m.FileName)
 		assert.Equal(t, RootOriginals, m.FileRoot)
 		assert.Equal(t, false, m.FileMissing)
-		assert.Nil(t, m.DeletedAt)
+		assert.False(t, m.DeletedAt.Valid)
 		assert.Equal(t, "2790/07", p.PhotoPath)
 		assert.Equal(t, "27900704_070228_D6D51B6C", p.PhotoName)
 	})
@@ -932,5 +1018,26 @@ func TestFile_ContentType(t *testing.T) {
 		hevc := FileFixtures.Get("Photo21.mp4")
 		assert.Equal(t, true, hevc.FileVideo)
 		assert.Equal(t, header.ContentTypeMp4HvcMain10, hevc.ContentType())
+	})
+}
+
+func TestFile_MissingPhotoID(t *testing.T) {
+	t.Run("No PhotoID or Photo", func(t *testing.T) {
+		file := File{}
+		err := file.Create()
+		assert.Error(t, err)
+		assert.ErrorContains(t, err, "file: cannot create file with empty photo id")
+	})
+	t.Run("No PhotoID and Photo.ID = 0", func(t *testing.T) {
+		file := File{Photo: &Photo{ID: 0}}
+		err := file.Create()
+		assert.Error(t, err)
+		assert.ErrorContains(t, err, "file: cannot create file with empty photo id")
+	})
+	t.Run("PhotoID = 0 and Photo.ID = 0", func(t *testing.T) {
+		file := File{PhotoID: 0, Photo: &Photo{ID: 0}}
+		err := file.Create()
+		assert.Error(t, err)
+		assert.ErrorContains(t, err, "file: cannot create file with empty photo id")
 	})
 }

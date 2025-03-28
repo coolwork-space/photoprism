@@ -73,7 +73,8 @@ test-entity: reset-sqlite run-test-entity
 test-commands: reset-sqlite run-test-commands
 test-photoprism: reset-sqlite run-test-photoprism
 test-short: reset-sqlite run-test-short
-test-mariadb: reset-acceptance run-test-mariadb
+test-mariadb: reset-mariadb-acceptance run-test-mariadb
+test-sqlite: reset-sqlite-unit run-test-sqlite
 acceptance-run-chromium: storage/acceptance acceptance-auth-sqlite-restart wait acceptance-auth acceptance-auth-sqlite-stop acceptance-sqlite-restart wait-2 acceptance acceptance-sqlite-stop
 acceptance-run-chromium-short: storage/acceptance acceptance-auth-sqlite-restart wait acceptance-auth-short acceptance-auth-sqlite-stop acceptance-sqlite-restart wait-2 acceptance-short acceptance-sqlite-stop
 acceptance-auth-run-chromium: storage/acceptance acceptance-auth-sqlite-restart wait acceptance-auth acceptance-auth-sqlite-stop
@@ -308,7 +309,7 @@ test-js:
 	(cd frontend && env TZ=UTC BUILD_ENV=development NODE_ENV=development BABEL_ENV=test npm run test)
 acceptance:
 	$(info Running public-mode tests in Chrome...)
-	(cd frontend &&	npm run testcafe -- "chrome --headless=new" --test-grep "^(Multi-Window)\:*" --test-meta mode=public --config-file ./testcaferc.json --experimental-multiple-windows "tests/acceptance" && npm run testcafe -- "chrome --headless=new" --test-grep "^(Common|Core)\:*" --test-meta mode=public --config-file ./testcaferc.json "tests/acceptance")
+	(cd frontend &&	find ./tests/acceptance -type f -name "*.js" | xargs -i perl -0777 -ne 'while(/(?:mode: \"auth[^,]*\,)|(Multi-Window\:[A-Za-z 0-9\-_]*)/g){print "$$1\n" if ($$1);}' {} | xargs -I testname bash -c 'npm run testcafe -- "chrome --headless=new" --experimental-multiple-windows --test-meta mode=public --config-file ./testcaferc.json --test "testname" "tests/acceptance"'  && npm run testcafe -- "chrome --headless=new" --test-grep "^(Common|Core)\:*" --test-meta mode=public --config-file ./testcaferc.json "tests/acceptance")
 acceptance-short:
 	$(info Running JS acceptance tests in Chrome...)
 	(cd frontend &&	npm run testcafe -- "chrome --headless=new" --test-grep "^(Multi-Window)\:*" --test-meta mode=public --config-file ./testcaferc.json --experimental-multiple-windows "tests/acceptance" && npm run testcafe -- "chrome --headless=new" --test-grep "^(Common|Core)\:*" --test-meta mode=public,type=short --config-file ./testcaferc.json "tests/acceptance")
@@ -317,7 +318,7 @@ acceptance-firefox:
 	(cd frontend && npm run testcafe -- firefox:headless --test-grep "^(Common|Core)\:*" --test-meta mode=public --config-file ./testcaferc.json --disable-native-automation "tests/acceptance")
 acceptance-auth:
 	$(info Running JS acceptance-auth tests in Chrome...)
-	(cd frontend &&	npm run testcafe -- "chrome --headless=new" --test-grep "^(Multi-Window)\:*" --test-meta mode=auth --config-file ./testcaferc.json --experimental-multiple-windows "tests/acceptance" && npm run testcafe -- "chrome --headless=new" --test-grep "^(Common|Core)\:*" --test-meta mode=auth --config-file ./testcaferc.json "tests/acceptance")
+	(cd frontend &&	find ./tests/acceptance -type f -name "*.js" | xargs -i perl -0777 -ne 'while(/(?:mode: \"public[^,]*\,)|(Multi-Window\:[A-Za-z 0-9\-_]*)/g){print "$$1\n" if ($$1);}' {} | xargs -I testname bash -c 'npm run testcafe -- "chrome --headless=new" --experimental-multiple-windows --test-meta mode=auth --config-file ./testcaferc.json --test "testname" "tests/acceptance"'  && npm run testcafe -- "chrome --headless=new" --test-grep "^(Common|Core)\:*" --test-meta mode=auth --config-file ./testcaferc.json "tests/acceptance")
 acceptance-auth-short:
 	$(info Running JS acceptance-auth tests in Chrome...)
 	(cd frontend &&	npm run testcafe -- "chrome --headless=new" --test-grep "^(Multi-Window)\:*" --test-meta mode=auth --config-file ./testcaferc.json --experimental-multiple-windows "tests/acceptance" && npm run testcafe -- "chrome --headless=new" --test-grep "^(Common|Core)\:*" --test-meta mode=auth,type=short --config-file ./testcaferc.json "tests/acceptance")
@@ -336,9 +337,13 @@ reset-mariadb-local:
 reset-mariadb-acceptance:
 	$(info Resetting acceptance database...)
 	mysql < scripts/sql/reset-acceptance.sql
+reset-sqlite-unit:
+	$(info Resetting SQLite unit database...)
+	rm --force ./storage/testdata/unit.test.db
+	cp ./internal/entity/migrate/testdata/migrate_sqlite3 ./storage/testdata/unit.test.db
 reset-mariadb-all: reset-mariadb-testdb reset-mariadb-local reset-mariadb-acceptance reset-mariadb-photoprism
 reset-testdb: reset-sqlite reset-mariadb-testdb
-reset-acceptance: reset-mariadb-acceptance
+# reset-acceptance: reset-mariadb-acceptance
 reset-sqlite:
 	$(info Removing test database files...)
 	find ./internal -type f -name ".test.*" -delete
@@ -348,6 +353,9 @@ run-test-short:
 run-test-go:
 	$(info Running all Go tests...)
 	$(GOTEST) -parallel 1 -count 1 -cpu 1 -tags="slow,develop" -timeout 20m ./pkg/... ./internal/...
+run-test-sqlite:
+	$(info Running all Go tests on SQLite...)
+	PHOTOPRISM_TEST_DRIVER="sqlite" PHOTOPRISM_TEST_DSN="file:/go/src/github.com/photoprism/photoprism/storage/testdata/unit.test.db?_foreign_keys=on&_busy_timeout=5000" $(GOTEST) -parallel 1 -count 1 -cpu 1 -tags "slow,develop" -timeout 20m ./internal/... ./pkg/...
 run-test-mariadb:
 	$(info Running all Go tests on MariaDB...)
 	PHOTOPRISM_TEST_DRIVER="mysql" PHOTOPRISM_TEST_DSN="root:photoprism@tcp(mariadb:4001)/acceptance?charset=utf8mb4,utf8&collation=utf8mb4_unicode_ci&parseTime=true" $(GOTEST) -parallel 1 -count 1 -cpu 1 -tags="slow,develop" -timeout 20m ./pkg/... ./internal/...
@@ -380,6 +388,18 @@ test-coverage:
 	go test -parallel 1 -count 1 -cpu 1 -failfast -tags="slow,develop" -timeout 30m -coverprofile coverage.txt -covermode atomic ./pkg/... ./internal/...
 	go tool cover -html=coverage.txt -o coverage.html
 	go tool cover -func coverage.txt  | grep total:
+test-sqlite-benchmark10x:
+	$(info Running all Go tests with benchmarks...)
+	dirname $$(grep --files-with-matches --include "*_test.go" -oP "(?<=func )Benchmark[A-Za-z_]+(?=\(b \*testing\.B)" --recursive ./*) | sort -u | xargs -n1 bash -c 'cd "$$0" && pwd && go test -skip Test -parallel 4 -count 10 -cpu 4 -failfast -tags slow -timeout 30m -benchtime 1s -bench=.'
+test-sqlite-benchmark10s:
+	$(info Running all Go tests with benchmarks...)
+	dirname $$(grep --files-with-matches --include "*_test.go" -oP "(?<=func )Benchmark[A-Za-z_]+(?=\(b \*testing\.B)" --recursive ./*) | sort -u | xargs -n1 bash -c 'cd "$$0" && pwd && go test -skip Test -parallel 4 -count 1 -cpu 4 -failfast -tags slow -timeout 30m -benchtime 10s -bench=.'
+test-mariadb-benchmark10x:
+	$(info Running all Go tests with benchmarks...)
+	dirname $$(grep --files-with-matches --include "*_test.go" -oP "(?<=func )Benchmark[A-Za-z_]+(?=\(b \*testing\.B)" --recursive ./*) | sort -u | xargs -n1 bash -c 'cd "$$0" && pwd && PHOTOPRISM_TEST_DRIVER="mysql" PHOTOPRISM_TEST_DSN="root:photoprism@tcp(mariadb:4001)/acceptance?charset=utf8mb4,utf8&collation=utf8mb4_unicode_ci&parseTime=true" go test -skip Test -parallel 4 -count 10 -cpu 4 -failfast -tags slow -timeout 30m -benchtime 1s -bench=.'
+test-mariadb-benchmark10s:
+	$(info Running all Go tests with benchmarks...)
+	dirname $$(grep --files-with-matches --include "*_test.go" -oP "(?<=func )Benchmark[A-Za-z_]+(?=\(b \*testing\.B)" --recursive ./*) | sort -u | xargs -n1 bash -c 'cd "$$0" && pwd && PHOTOPRISM_TEST_DRIVER="mysql" PHOTOPRISM_TEST_DSN="root:photoprism@tcp(mariadb:4001)/acceptance?charset=utf8mb4,utf8&collation=utf8mb4_unicode_ci&parseTime=true" go test -skip Test -parallel 4 -count 1 -cpu 4 -failfast -tags slow -timeout 30m -benchtime 10s -bench=.'
 docker-pull:
 	$(DOCKER_COMPOSE) --profile=all pull --ignore-pull-failures
 	$(DOCKER_COMPOSE) -f compose.latest.yaml pull --ignore-pull-failures
@@ -801,6 +821,42 @@ dummy-ldap:
 	$(info Restarting dummy-ldap service...)
 	$(DOCKER_COMPOSE) stop dummy-ldap
 	$(DOCKER_COMPOSE) up -d -V --force-recreate dummy-ldap
+
+start-postgresql:
+	$(info Running PhotoPrism on PostgresQL...)
+	PHOTOPRISM_DRIVER="postgres" PHOTOPRISM_DSN="postgresql://photoprism:photoprism@postgres:5432/photoprism?TimeZone=UTC&connect_timeout=15&lock_timeout=50000&sslmode=disable" ./photoprism start -d
+docker-postgresql:
+	$(DOCKER_COMPOSE) -f compose.postgres.yaml up
+docker-recreatepostgresql:
+	docker container rm photoprism-postgres-1
+	docker volume rm photoprism_postgresql
+test-postgresql: reset-postgresql-acceptance run-test-postgresql
+postgresql:
+	$(DOCKER_COMPOSE) exec postgres psql -uphotoprism -pphotoprism photoprism
+reset-postgresql:
+	$(info Resetting photoprism database...)
+	psql postgresql://photoprism:photoprism@postgres:5432/postgres -f scripts/sql/postgresql/reset-photoprism.sql
+reset-postgresql-testdb:
+	$(info Resetting testdb database...)
+	psql postgresql://photoprism:photoprism@postgres:5432/postgres  -f scripts/sql/postgresql/reset-testdb.sql
+reset-postgresql-local:
+	$(info Resetting local database...)
+	psql postgresql://photoprism:photoprism@postgres:5432/postgres  -f scripts/sql/postgresql/reset-local.sql
+reset-postgresql-acceptance:
+	$(info Resetting acceptance database...)
+	psql postgresql://photoprism:photoprism@postgres:5432/postgres  -f scripts/sql/postgresql/reset-acceptance.sql
+reset-postgresql-all: reset-postgresql-testdb reset-postgresql-local reset-postgresql-acceptance reset-postgresql-photoprism
+run-test-postgresql:
+	$(info Running all Go tests on PostgreSQL...)
+	PHOTOPRISM_TEST_DRIVER="postgres" PHOTOPRISM_TEST_DSN="postgresql://acceptance:acceptance@postgres:5432/acceptance?TimeZone=UTC&connect_timeout=15&lock_timeout=5000&sslmode=disable" $(GOTEST) -parallel 1 -count 1 -cpu 1 -tags="slow,develop" -timeout 20m ./pkg/... ./internal/...
+#	PHOTOPRISM_TEST_DRIVER="postgres" PHOTOPRISM_TEST_DSN="user=acceptance password=acceptance dbname=acceptance host=localhost port=5432 connect_timeout=15 sslmode=disable TimeZone=UTC" $(GOTEST) -parallel 1 -count 1 -cpu 1 -tags="slow,develop" -timeout 20m ./pkg/... ./internal/...
+test-postgresql-benchmark10x:
+	$(info Running all Go tests with benchmarks...)
+	dirname $$(grep --files-with-matches --include "*_test.go" -oP "(?<=func )Benchmark[A-Za-z_]+(?=\(b \*testing\.B)" --recursive ./*) | sort -u | xargs -n1 bash -c 'cd "$$0" && pwd && PHOTOPRISM_TEST_DRIVER="postgres" PHOTOPRISM_TEST_DSN="user=acceptance password=acceptance dbname=acceptance host=localhost port=5432 connect_timeout=15 sslmode=disable TimeZone=UTC" go test -skip Test -parallel 4 -count 10 -cpu 4 -failfast -tags slow -timeout 30m -benchtime 1s -bench=.'
+test-postgresql-benchmark10s:
+	$(info Running all Go tests with benchmarks...)
+	dirname $$(grep --files-with-matches --include "*_test.go" -oP "(?<=func )Benchmark[A-Za-z_]+(?=\(b \*testing\.B)" --recursive ./*) | sort -u | xargs -n1 bash -c 'cd "$$0" && pwd && PHOTOPRISM_TEST_DRIVER="postgres" PHOTOPRISM_TEST_DSN="user=acceptance password=acceptance dbname=acceptance host=localhost port=5432 connect_timeout=15 sslmode=disable TimeZone=UTC" go test -skip Test -parallel 4 -count 1 -cpu 4 -failfast -tags slow -timeout 30m -benchtime 10s -bench=.'
+
 
 # Declare all targets as "PHONY", see https://www.gnu.org/software/make/manual/html_node/Phony-Targets.html.
 MAKEFLAGS += --always-make

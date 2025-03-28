@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 
 	"github.com/photoprism/photoprism/internal/entity"
 	"github.com/photoprism/photoprism/internal/form"
@@ -56,7 +56,20 @@ func Subjects(frm form.SearchSubjects) (results SubjectResults, err error) {
 	}
 
 	if frm.Query != "" {
-		for _, where := range LikeAllNames(Cols{"subj_name", "subj_alias"}, frm.Query) {
+		whereString1 := ""
+		whereString2 := ""
+		valueString := ""
+		switch entity.DbDialect() {
+		case entity.Postgres:
+			whereString1 = "lower(subj_name)"
+			whereString2 = "lower(subj_alias)"
+			valueString = strings.ToLower(frm.Query)
+		default:
+			whereString1 = "subj_name"
+			whereString2 = "subj_alias"
+			valueString = frm.Query
+		}
+		for _, where := range LikeAllNames(Cols{whereString1, whereString2}, valueString) {
 			s = s.Where("?", gorm.Expr(where))
 		}
 	}
@@ -75,25 +88,25 @@ func Subjects(frm form.SearchSubjects) (results SubjectResults, err error) {
 
 	if !frm.All {
 		if txt.Yes(frm.Favorite) {
-			s = s.Where("subj_favorite = 1")
+			s = s.Where("subj_favorite = TRUE")
 		} else if txt.No(frm.Favorite) {
-			s = s.Where("subj_favorite = 0")
+			s = s.Where("subj_favorite = FALSE")
 		}
 
 		if !txt.Yes(frm.Hidden) {
-			s = s.Where("subj_hidden = 0")
+			s = s.Where("subj_hidden = FALSE")
 		}
 
 		if txt.Yes(frm.Private) {
-			s = s.Where("subj_private = 1")
+			s = s.Where("subj_private = TRUE")
 		} else if txt.No(frm.Private) {
-			s = s.Where("subj_private = 0")
+			s = s.Where("subj_private = FALSE")
 		}
 
 		if txt.Yes(frm.Excluded) {
-			s = s.Where("subj_excluded = 1")
+			s = s.Where("subj_excluded = TRUE")
 		} else if txt.No(frm.Excluded) {
-			s = s.Where("subj_excluded = 0")
+			s = s.Where("subj_excluded = FALSE")
 		}
 	}
 
@@ -120,8 +133,20 @@ func SubjectUIDs(s string) (result []string, names []string, remaining string) {
 	}
 
 	var matches []Matches
-
-	wheres := LikeAllNames(Cols{"subj_name", "subj_alias"}, s)
+	whereString1 := ""
+	whereString2 := ""
+	valueString := ""
+	switch entity.DbDialect() {
+	case entity.Postgres:
+		whereString1 = "lower(subj_name)"
+		whereString2 = "lower(subj_alias)"
+		valueString = strings.ToLower(s)
+	default:
+		whereString1 = "subj_name"
+		whereString2 = "subj_alias"
+		valueString = s
+	}
+	wheres := LikeAllNames(Cols{whereString1, whereString2}, valueString)
 
 	if len(wheres) == 0 {
 		return result, names, s

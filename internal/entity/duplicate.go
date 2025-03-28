@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/photoprism/photoprism/pkg/clean"
+	"gorm.io/gorm/clause"
 )
 
 type Duplicates []Duplicate
@@ -11,9 +12,9 @@ type DuplicatesMap map[string]Duplicate
 
 // Duplicate represents an exact file duplicate.
 type Duplicate struct {
-	FileName string `gorm:"type:VARBINARY(755);primary_key;" json:"Name" yaml:"Name"`
-	FileRoot string `gorm:"type:VARBINARY(16);primary_key;default:'/';" json:"Root" yaml:"Root,omitempty"`
-	FileHash string `gorm:"type:VARBINARY(128);default:'';index" json:"Hash" yaml:"Hash,omitempty"`
+	FileName string `gorm:"type:bytes;size:755;primaryKey;" json:"Name" yaml:"Name"`
+	FileRoot string `gorm:"type:bytes;size:16;primaryKey;default:'/';" json:"Root" yaml:"Root,omitempty"`
+	FileHash string `gorm:"type:bytes;size:128;default:'';index" json:"Hash" yaml:"Hash,omitempty"`
 	FileSize int64  `json:"Size" yaml:"Size,omitempty"`
 	ModTime  int64  `json:"ModTime" yaml:"-"`
 }
@@ -43,13 +44,14 @@ func AddDuplicate(fileName, fileRoot, fileHash string, fileSize, modTime int64) 
 		ModTime:  modTime,
 	}
 
-	if err := duplicate.Create(); err == nil {
+	if err := UnscopedDb().Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "file_name"}, {Name: "file_root"}},
+		DoUpdates: clause.AssignmentColumns([]string{"file_hash", "file_size", "mod_time"}),
+	}).Create(duplicate).Error; err == nil {
 		return nil
-	} else if err := duplicate.Save(); err != nil {
+	} else {
 		return err
 	}
-
-	return nil
 }
 
 // PurgeDuplicate deletes a duplicate.

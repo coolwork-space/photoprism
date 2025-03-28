@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
@@ -11,6 +12,7 @@ import (
 	"github.com/photoprism/photoprism/internal/config"
 	"github.com/photoprism/photoprism/internal/event"
 	"github.com/photoprism/photoprism/internal/photoprism/get"
+	"github.com/photoprism/photoprism/internal/testextras"
 	"github.com/photoprism/photoprism/pkg/capture"
 )
 
@@ -18,6 +20,14 @@ func TestMain(m *testing.M) {
 	log = logrus.StandardLogger()
 	log.SetLevel(logrus.TraceLevel)
 	event.AuditLog = log
+
+	caller := "internal/commands/commands_test.go/TestMain"
+	dbc, err := testextras.AcquireDBMutex(log, caller)
+	if err != nil {
+		log.Error("FAIL")
+		os.Exit(1)
+	}
+	defer testextras.UnlockDBMutex(dbc.Db())
 
 	c := config.NewTestConfig("commands")
 	get.SetConfig(c)
@@ -28,7 +38,11 @@ func TestMain(m *testing.M) {
 	}
 
 	// Run unit tests.
+	beforeTimestamp := time.Now().UTC()
 	code := m.Run()
+	code = testextras.ValidateDBErrors(dbc.Db(), log, beforeTimestamp, code)
+
+	testextras.ReleaseDBMutex(dbc.Db(), log, caller, code)
 
 	// Close database connection.
 	_ = c.CloseDb()

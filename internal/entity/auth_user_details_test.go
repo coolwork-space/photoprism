@@ -14,6 +14,9 @@ func TestCreateUserDetails(t *testing.T) {
 	})
 	t.Run("Success", func(t *testing.T) {
 		m := &User{UserUID: "1234"}
+		if err := Db().Create(m).Error; err != nil { // Have to create a user BEFORE adding details to it.
+			t.Fatal(err)
+		}
 		err := CreateUserDetails(m)
 
 		if err != nil {
@@ -33,6 +36,7 @@ func TestUserDetails_Updates(t *testing.T) {
 	m := &User{
 		UserUID: "1234",
 		UserDetails: &UserDetails{
+			UserUID:    "1234", // m.UserDetails.Updates fails with WHERE conditions required.
 			BirthYear:  1999,
 			BirthMonth: 3,
 			NameTitle:  "Dr.",
@@ -41,7 +45,7 @@ func TestUserDetails_Updates(t *testing.T) {
 			FamilyName: "Doe",
 		}}
 
-	m.UserDetails.Updates(UserDetails{GivenName: "Jane"})
+	assert.Nil(t, m.UserDetails.Updates(UserDetails{GivenName: "Jane"}))
 	assert.Equal(t, "Jane", m.UserDetails.GivenName)
 }
 
